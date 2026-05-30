@@ -20,7 +20,92 @@ It needs to stay pure Python (no numpy), work in Python 3.10+, and the output or
 doesn't matter.
 ```
 
-## Envelope (machine-readable)
+---
+
+## ❌ Without Cave Prompt — Raw prompt sent directly to LLM
+
+**What the LLM typically does:**
+
+The model reads the prompt and attempts a refactor. Most of the time it gets close — but the subtle constraints are where it fails.
+
+**Common problems with a raw LLM response:**
+
+**1. Violates explicit constraints:**
+```python
+# LLM "helpfully" imports numpy for performance
+import numpy as np
+def find_duplicates(items):
+    return list(np.unique(items[np.array([...])])) 
+```
+→ Constraint "pure Python (no numpy)" was in the prompt — but buried in prose, easy to miss.
+
+**2. Silently changes the function signature or name:**
+```python
+# LLM renames for "clarity"
+def get_duplicate_values(lst):
+    ...
+```
+→ If this is called in 200 places in production code, every call breaks. The original name `find_duplicates` should be verbatim-protected.
+
+**3. Changes semantics without saying so:**
+```python
+# LLM returns a set instead of a list (order change)
+def find_duplicates(items):
+    seen = set()
+    return list({x for x in items if items.count(x) > 1})
+```
+→ Output type changed. Breaks callers that expect a list. The constraint "output order doesn't matter" ≠ "change the return type".
+
+**4. No fidelity signal — you don't know what was dropped:**
+The LLM gives you code. You don't know:
+- Was "Python 3.10+" enforced? (walrus operator used? match statement?)
+- Was the O(n²) → O(n) reduction actually achieved or just claimed?
+- Was `items[i] not in duplicates` semantics preserved?
+
+---
+
+## ✅ With Cave Prompt — Constraints extracted, code verbatim-protected
+
+Cave Prompt reads the prompt before the LLM touches it. It **locks in every constraint** and **copies the code block verbatim** so the main LLM receives a precise brief with no room for creative interpretation.
+
+**What Cave Prompt locks in:**
+
+| Constraint | In raw prompt | Cave Prompt treatment |
+|---|---|---|
+| `pure Python (no numpy)` | Prose, easy to miss | Extracted to `constraints.technical` |
+| `Python 3.10+` | Prose | Extracted to `constraints.technical`, verbatim-protected |
+| `1M records` | Prose | Extracted to `constraints.performance`, verbatim-protected |
+| `O(n²)` | Prose | Extracted to `execution_requirements`, verbatim-protected |
+| `find_duplicates` function name | In code | Verbatim-protected — never renamed |
+| Full code block | In prompt | Copied verbatim into execution prompt — never paraphrased |
+| `output order doesn't matter` | Prose | Mapped to constraint, NOT interpreted as "change return type" |
+
+**Fidelity score: 0.96** — what was dropped and why is listed explicitly in `dropped_or_uncertain`.
+
+**Hidden requirement surfaced:**
+- "preserve semantics: return list of values that appear more than once, each listed once" — this is implied by the original code but never stated. Cave Prompt reads the code and extracts it.
+
+**The execution prompt sent to the main LLM:**
+
+> Refactor the following Python function to reduce complexity from O(n²) to O(n). Constraints: pure Python only (no numpy), Python 3.10+, handle 1M records, output order irrelevant. Preserve semantics: return a list of values appearing more than once, each listed once.
+>
+> ```python
+> def find_duplicates(items):
+>     duplicates = []
+>     for i in range(len(items)):
+>         for j in range(i + 1, len(items)):
+>             if items[i] == items[j] and items[i] not in duplicates:
+>                 duplicates.append(items[i])
+>     return duplicates
+> ```
+>
+> Provide the refactored function with a brief explanation of the algorithmic change.
+
+The main LLM now has zero ambiguity. Every constraint is explicit. The code is exact. There is no prose to misread.
+
+---
+
+## Full envelope (machine-readable)
 
 ```json
 {
@@ -82,41 +167,6 @@ doesn't matter.
 }
 ```
 
-## Human-readable render
-
-### 1. Semantic Analysis
-
-- **Intent:** Refactor `find_duplicates` from O(n²) to efficient algorithm for 1M records
-- **Domain:** Python algorithm optimization
-- **Constraints:** pure Python, Python 3.10+, no numpy, output order irrelevant
-- **Hidden requirements:** preserve return semantics (list of duplicates, each once)
-
-### 2. Optimized Prompt IR
-
-- **Task type:** code refactoring / algorithm optimization
-- **Key requirements:** O(n) set-based replacement, 1M scale, stdlib only
-- **Reasoning mode:** algorithmic analysis + drop-in replacement
-
-### 3. Entropy Analysis
-
-Semantic density: **0.78**. Code block is 100% execution-critical — copied verbatim per A2. Noise: framing sentences only.
-
-### 4. Final Optimized Execution Prompt
-
-> Refactor the following Python function to reduce complexity from O(n²) to O(n). Constraints: pure Python only (no numpy), Python 3.10+, handle 1M records, output order irrelevant. Preserve semantics: return a list of values appearing more than once, each listed once.
->
-> ```python
-> def find_duplicates(items):
->     duplicates = []
->     for i in range(len(items)):
->         for j in range(i + 1, len(items)):
->             if items[i] == items[j] and items[i] not in duplicates:
->                 duplicates.append(items[i])
->     return duplicates
-> ```
->
-> Provide the refactored function with a brief explanation of the algorithmic change.
-
 ---
 
-*Demonstrates: output_language=match-input (English in → English out), A2 verbatim preservation of code block and technical spans ("O(n²)", "1M records", "Python 3.10+"), surgical compression of framing noise.*
+*Demonstrates: output_language=match-input (English in → English out), A2 verbatim preservation of code block and technical spans ("O(n²)", "1M records", "Python 3.10+"), hidden semantic extraction from code, surgical compression of framing noise.*
