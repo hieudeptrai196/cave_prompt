@@ -1,31 +1,95 @@
-# Example 01 — NestJS Chatbot (Vietnamese input, language matching + verbatim preservation)
+# Example 01 — NestJS Chatbot (verbatim preservation + hidden requirement extraction)
 
 ## Input
 
 ```
-Tôi muốn xây chatbot cho hệ thống hỗ trợ khách hàng với NestJS, cần handle 100k user đồng thời, dùng Redis để cache session, có stream token. Hạ tầng phải rẻ thôi, và cần response technical ngắn gọn.
+I want to build a customer support chatbot with NestJS, needs to handle 100k concurrent users,
+use Redis for session caching, with token streaming. Infrastructure must be cheap,
+and I need concise technical responses.
 ```
 
-## Envelope (machine-readable)
+---
+
+## ❌ Without Cave Prompt — Raw prompt sent directly to LLM
+
+**What the LLM typically does:**
+
+The model reads the prompt and tries to answer immediately. Without explicit structure, it has to guess:
+
+- Does "cheap" mean serverless? shared hosting? spot instances? → **guesses**
+- Does "token streaming" mean SSE or WebSocket? → **picks one arbitrarily**
+- "100k concurrent users" — does the user want architecture advice, or actual code? → **often gives both, wastes tokens**
+- "I want to" is a filler — the model processes it as signal → **attention budget wasted**
+
+**What you typically get:**
+
+> "To build a NestJS customer support chatbot handling 100k concurrent users, here's what you'll need:
+> First, install NestJS using `npm install -g @nestjs/cli` and scaffold a new project..."
+
+Problems:
+- Starts with a basic NestJS install guide → irrelevant, wastes output tokens
+- No mention of backpressure handling → hidden requirement missed entirely
+- "token streaming" interpreted as WebSocket with no mention of SSE trade-offs
+- Rephrase the same prompt slightly → get a completely different structure and priorities
+
+**Consistency test — same intent, different wording:**
+
+| Prompt variant | LLM output focus |
+|---|---|
+| "I want to build a NestJS chatbot..." | Starts with setup guide |
+| "Build a NestJS chatbot, scale to 100k users..." | Jumps straight to architecture |
+| "NestJS chatbot 100k concurrent, Redis, cheap" | Returns a concise bullet list |
+
+→ **3 different structures. 3 different priorities. No guarantee which is correct.**
+
+---
+
+## ✅ With Cave Prompt — Compiled before execution
+
+Cave Prompt reads the prompt and **externalizes its understanding** as a structured IR before anything executes.
+
+**What it catches that the raw prompt hides:**
+
+| Signal | Raw prompt | Cave Prompt |
+|---|---|---|
+| "I want to" | processed as content | flagged as `redundant_spans`, stripped |
+| "token streaming" | ambiguous → guess | recorded in `ambiguities`, kept verbatim |
+| stateless session requirement | never mentioned → missed | surfaced as `hidden_requirements` |
+| backpressure handling | never mentioned → missed | surfaced as `hidden_requirements` |
+| "cheap" | vague → guess | mapped to `cost` constraint, `priorities: cost efficiency` |
+
+**Fidelity score: 0.95** — 95% of original meaning preserved and verifiable.
+
+**Verbatim-protected spans:** `100k`, `Redis`, `NestJS`, `token streaming` — never paraphrased.
+
+**The execution prompt sent to the main LLM:**
+
+> Design and implement a customer support chatbot on NestJS handling 100k concurrent users. Hard requirements: Redis session caching, token streaming (SSE or WebSocket) with backpressure handling, cost-optimized infrastructure. Output priorities: scalability architecture, Redis session strategy, streaming implementation. Skip basic NestJS setup. Format: technical, concise.
+
+No filler. No guessing. No boilerplate intro. The main LLM receives a precise brief.
+
+---
+
+## Full envelope (machine-readable)
 
 ```json
 {
   "blocking_ambiguities": [],
   "semantic_analysis": {
-    "intent": "Xây dựng chatbot hỗ trợ khách hàng trên NestJS chịu tải cao, có streaming và Redis cache",
+    "intent": "Build a customer support chatbot on NestJS with high throughput, token streaming, and Redis session caching",
     "domain": "Backend engineering / conversational AI",
-    "entities": ["NestJS", "Redis", "chatbot", "khách hàng"],
+    "entities": ["NestJS", "Redis", "chatbot", "customer support"],
     "constraints": {
       "technical": ["NestJS framework", "Redis session cache", "token streaming"],
       "performance": ["100k concurrent users"],
-      "cost": ["hạ tầng rẻ"]
+      "cost": ["cheap infrastructure"]
     },
     "priorities": ["concurrency scalability", "cost efficiency", "streaming UX"],
     "response_preferences": {
       "tone": "technical",
       "verbosity": "concise"
     },
-    "ambiguities": ["LLM provider chưa chỉ định", "database/storage chưa rõ"],
+    "ambiguities": ["LLM provider not specified", "database/storage not specified"],
     "hidden_requirements": [
       "stateless or externalized session management",
       "backpressure handling for token streams",
@@ -49,45 +113,20 @@ Tôi muốn xây chatbot cho hệ thống hỗ trợ khách hàng với NestJS, 
   },
   "entropy_analysis": {
     "semantic_density": 0.82,
-    "redundant_spans": ["Tôi muốn", "thôi"],
-    "low_information_spans": ["cần response technical ngắn gọn"],
-    "execution_critical_spans": ["100k", "Redis", "NestJS", "stream token"],
-    "summary": "Prompt có mật độ ngữ nghĩa cao (0.82). Noise chính: filler đầu câu ('Tôi muốn') và qualifier cuối ('thôi'). Tất cả span kỹ thuật đều execution-critical và được giữ nguyên văn."
+    "redundant_spans": ["I want to"],
+    "low_information_spans": ["I need concise technical responses"],
+    "execution_critical_spans": ["100k", "Redis", "NestJS", "token streaming"],
+    "summary": "High semantic density (0.82). Noise: filler opener. All technical spans are execution-critical and preserved verbatim."
   },
-  "verbatim_spans": ["100k", "Redis", "NestJS", "stream token"],
+  "verbatim_spans": ["100k", "Redis", "NestJS", "token streaming"],
   "fidelity_score": 0.95,
   "dropped_or_uncertain": [
-    "ngắn gọn — interpreted as concise technical depth, not brevity at cost of completeness"
+    "concise — interpreted as concise technical depth, not brevity at cost of completeness"
   ],
-  "execution_prompt": "Thiết kế và hướng dẫn implement chatbot hỗ trợ khách hàng trên NestJS chịu tải 100k concurrent users. Yêu cầu cứng: cache session bằng Redis, hỗ trợ stream token (SSE hoặc WebSocket) với backpressure handling, hạ tầng cost-optimized. Ưu tiên output: scalability architecture, Redis session strategy, streaming implementation. Bỏ qua intro cơ bản NestJS. Format: technical, súc tích."
+  "execution_prompt": "Design and implement a customer support chatbot on NestJS handling 100k concurrent users. Hard requirements: Redis session caching, token streaming (SSE or WebSocket) with backpressure handling, cost-optimized infrastructure. Output priorities: scalability architecture, Redis session strategy, streaming implementation. Skip basic NestJS setup. Format: technical, concise."
 }
 ```
 
-## Human-readable render
-
-### 1. Semantic Analysis
-
-- **Intent:** Xây dựng chatbot hỗ trợ khách hàng trên NestJS chịu tải cao, có streaming và Redis cache
-- **Domain:** Backend engineering / conversational AI
-- **Entities:** NestJS, Redis, chatbot, khách hàng
-- **Constraints:** technical (NestJS, Redis, streaming), performance (100k users), cost (rẻ)
-- **Hidden requirements:** stateless session, backpressure, horizontal scaling
-
-### 2. Optimized Prompt IR
-
-- **Task type:** system design + implementation guide
-- **Reasoning mode:** technical depth, concise output
-- **High priority:** scalability, Redis, streaming
-- **Low priority:** boilerplate, intro
-
-### 3. Entropy Analysis
-
-Semantic density: **0.82** — cao. Removed noise: filler phrases. All technical spans are execution-critical and preserved verbatim.
-
-### 4. Final Optimized Execution Prompt
-
-> Thiết kế và hướng dẫn implement chatbot hỗ trợ khách hàng trên NestJS chịu tải 100k concurrent users. Yêu cầu cứng: cache session bằng Redis, hỗ trợ stream token (SSE hoặc WebSocket) với backpressure handling, hạ tầng cost-optimized. Ưu tiên output: scalability architecture, Redis session strategy, streaming implementation. Bỏ qua intro cơ bản NestJS. Format: technical, súc tích.
-
 ---
 
-*Demonstrates: output_language=match-input (Vietnamese in → Vietnamese out), verbatim preservation of "100k", "Redis", "NestJS", "stream token", high semantic density.*
+*Demonstrates: verbatim preservation of "100k", "Redis", "NestJS", "token streaming", hidden requirement extraction (backpressure, stateless session), filler stripping.*
