@@ -1,5 +1,7 @@
 # Cave Prompt
 
+> ⭐ If Cave Prompt saves you a debugging session, a misunderstood requirement, or just one "why did it do that?" moment — a star means a lot. [github.com/hieudeptrai196/cave_prompt](https://github.com/hieudeptrai196/cave_prompt)
+
 **[Tiếng Việt](README.vi.md)**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)

@@ -1,5 +1,7 @@
 # Cave Prompt
 
+> ⭐ Nếu Cave Prompt giúp bạn tránh được một bug khó chịu, một yêu cầu bị hiểu sai, hay chỉ một lần "sao nó lại làm vậy?" — một star là tất cả những gì mình xin. [github.com/hieudeptrai196/cave_prompt](https://github.com/hieudeptrai196/cave_prompt)
+
 **[English](README.md)**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
